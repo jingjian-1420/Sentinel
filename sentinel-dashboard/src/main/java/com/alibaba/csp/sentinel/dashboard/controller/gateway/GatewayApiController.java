@@ -26,6 +26,8 @@ import com.alibaba.csp.sentinel.dashboard.domain.vo.gateway.api.AddApiReqVo;
 import com.alibaba.csp.sentinel.dashboard.domain.vo.gateway.api.ApiPredicateItemVo;
 import com.alibaba.csp.sentinel.dashboard.domain.vo.gateway.api.UpdateApiReqVo;
 import com.alibaba.csp.sentinel.dashboard.repository.gateway.InMemApiDefinitionStore;
+import com.alibaba.csp.sentinel.dashboard.rule.nacos.provider.GatewayApiRuleNacosProvider;
+import com.alibaba.csp.sentinel.dashboard.rule.nacos.publisher.GatewayApiRuleNacosPublisher;
 import com.alibaba.csp.sentinel.util.StringUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -53,8 +55,14 @@ public class GatewayApiController {
     @Autowired
     private InMemApiDefinitionStore repository;
 
+//    @Autowired
+//    private SentinelApiClient sentinelApiClient;
+
     @Autowired
-    private SentinelApiClient sentinelApiClient;
+    private GatewayApiRuleNacosProvider gatewayApiRuleNacosProvider;
+
+    @Autowired
+    private GatewayApiRuleNacosPublisher gatewayApiRuleNacosPublisher;
 
     @GetMapping("/list.json")
     @AuthAction(AuthService.PrivilegeType.READ_RULE)
@@ -71,7 +79,8 @@ public class GatewayApiController {
         }
 
         try {
-            List<ApiDefinitionEntity> apis = sentinelApiClient.fetchApis(app, ip, port).get();
+//            List<ApiDefinitionEntity> apis = sentinelApiClient.fetchApis(app, ip, port).get();
+            List<ApiDefinitionEntity> apis = gatewayApiRuleNacosProvider.getRules(app);
             repository.saveAll(apis);
             return Result.ofSuccess(apis);
         } catch (Throwable throwable) {
@@ -139,11 +148,11 @@ public class GatewayApiController {
         }
         entity.setPredicateItems(new LinkedHashSet<>(predicateItemEntities));
 
-        // 检查API名称不能重复
-        List<ApiDefinitionEntity> allApis = repository.findAllByMachine(MachineInfo.of(app.trim(), ip.trim(), port));
-        if (allApis.stream().map(o -> o.getApiName()).anyMatch(o -> o.equals(apiName.trim()))) {
-            return Result.ofFail(-1, "apiName exists: " + apiName);
-        }
+//        // 检查API名称不能重复
+//        List<ApiDefinitionEntity> allApis = repository.findAllByMachine(MachineInfo.of(app.trim(), ip.trim(), port));
+//        if (allApis.stream().map(o -> o.getApiName()).anyMatch(o -> o.equals(apiName.trim()))) {
+//            return Result.ofFail(-1, "apiName exists: " + apiName);
+//        }
 
         Date date = new Date();
         entity.setGmtCreate(date);
@@ -254,7 +263,15 @@ public class GatewayApiController {
     }
 
     private boolean publishApis(String app, String ip, Integer port) {
-        List<ApiDefinitionEntity> apis = repository.findAllByMachine(MachineInfo.of(app, ip, port));
-        return sentinelApiClient.modifyApis(app, ip, port, apis);
+//        List<ApiDefinitionEntity> apis = repository.findAllByMachine(MachineInfo.of(app, ip, port));
+//        return sentinelApiClient.modifyApis(app, ip, port, apis);
+
+        try {
+            List<ApiDefinitionEntity> apis = repository.findAllByApp(app);
+            gatewayApiRuleNacosPublisher.publish(app,apis);
+            return true;
+        }catch (Exception e){
+            return false;
+        }
     }
 }
